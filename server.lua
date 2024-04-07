@@ -9,7 +9,7 @@ Citizen.CreateThread(function()
         Citizen.Wait(1000) -- Ebben az esetben minden masodpercben ellenorizzük a jatekosok pozíciójat.
 
         -- Itt megadhatod a Z koordinatat, amely felett a jatekosokat kickelni szeretned.
-        local kickHeight = 300
+        local kickHeight = 400
 
         -- Iteralunk minden jatekoson a szerveren
         for _, playerId in ipairs(GetPlayers()) do
@@ -92,28 +92,31 @@ end
 Citizen.CreateThread(function()
     local lastPlayerCoords = {}
     while true do
-        Citizen.Wait(1000) -- Ellenorzes masodpercenkent
+        Citizen.Wait(1000) -- Ellenőrzés másodpercenként
 
         for _, playerId in ipairs(GetPlayers()) do
             local playerPed = GetPlayerPed(playerId)
             local playerId = GetPlayerServerId(playerId)
 
             if SpeedhackCheck(playerPed) then
-                DropPlayer(playerId, "Speedhack eszlelve")
+                DropPlayer(playerId, "Speedhack észlelve")
             elseif DamageBoostCheck(playerPed) then
-                DropPlayer(playerId, "Damage boost eszlelve")
+                DropPlayer(playerId, "Damage boost észlelve")
             elseif TeleportCheck(playerPed, lastPlayerCoords[playerId] or GetEntityCoords(playerPed)) then
-                DropPlayer(playerId, "Teleport eszlelve")
+                DropPlayer(playerId, "Teleport észlelve")
             elseif GodModeCheck(playerPed) then
-                DropPlayer(playerId, "God mode eszlelve")
+                DropPlayer(playerId, "God mode észlelve")
             elseif InvalidEventCheck() then
-                DropPlayer(playerId, "ervenytelen esemeny eszlelve")
+                DropPlayer(playerId, "Érvénytelen esemény észlelve")
+            elseif IsDropPlayerTriggered() then
+                TriggerServerEvent('banPlayer', playerId)
             end
 
             lastPlayerCoords[playerId] = GetEntityCoords(playerPed)
         end
     end
 end)
+
 
 Citizen.CreateThread(function()
     while true do
@@ -134,35 +137,52 @@ Citizen.CreateThread(function()
     end
 end)
 
-ESX = exports["es_extended"]:getSharedObject()
+local bannedPlayers = {}
 
-ESX.RegisterServerCallback("el_bwh:ban", function(source,cb,target,reason,length,offline)
-    if not target or not reason then return end
-    local xPlayer = ESX.GetPlayerFromId(source)
-    local xTarget = ESX.GetPlayerFromId(target)
-    if not xPlayer or (not xTarget and not offline) then cb(nil); return end
-    if isAdmin(xPlayer) then
-        local success, reason = banPlayer(xPlayer,offline and target or xTarget,reason,length,offline)
-        cb(success, reason)
-    else logUnfairUse(xPlayer); cb(false) end
-end)
+-- Betölti a bannolt játékosokat a JSON fájlból
+local function loadBannedPlayers()
+    local file = LoadResourceFile(GetCurrentResourceName(), 'banlist.json')
+    if file then
+        bannedPlayers = json.decode(file)
+    end
+end
 
-local isExplosionDetected = false
+-- Ment egy bannolt játékost a JSON fájlba
+local function saveBannedPlayers()
+    SaveResourceFile(GetCurrentResourceName(), 'banlist.json', json.encode(bannedPlayers, { indent = true }), -1)
+end
 
-Citizen.CreateThread(function()
-    while true do
-        Citizen.Wait(1000) -- Ellenőrzés minden másodpercben
-
-        if isExplosionDetected then
-            -- Itt lefuttathatsz bármit, amit szeretnél a robbanás észlelése esetén
-            DropPlayer(source, "Tilos felrobbantani tárgyakat.")
-            isExplosionDetected = false -- Visszaállítjuk az értéket a következő robbanás észlelésére
-        end
+-- Felismeri a játékos ID-jét és bannolja, ha nincs benne a listán
+RegisterServerEvent('banPlayer')
+AddEventHandler('banPlayer', function()
+    local src = source
+    local identifier = GetPlayerIdentifiers(src)[1]
+    DropPlayer(src, "Ki lettél tiltva szerveről az AntiCheat Által!")
+    
+    if not bannedPlayers[identifier] then
+        bannedPlayers[identifier] = true
+        saveBannedPlayers()
     end
 end)
 
-RegisterServerEvent('explosionDetected')
-AddEventHandler('explosionDetected', function()
-    isExplosionDetected = true
+-- Ellenőrzi a bejelentkező játékosokat
+AddEventHandler('playerConnecting', function(name, setKickReason, deferrals)
+    local src = source
+    local identifier = GetPlayerIdentifiers(src)[1]
+
+    if bannedPlayers[identifier] then
+        deferrals.defer()
+        deferrals.update('Nem léphetsz be a szerverre, mert bannolva vagy.')
+        Wait(2000)
+        deferrals.done('Kicked')
+    else
+        deferrals.done()
+    end
 end)
 
+-- Betölti a bannolt játékosokat induláskor
+AddEventHandler('onResourceStart', function(resourceName)
+    if GetCurrentResourceName() == resourceName then
+        loadBannedPlayers()
+    end
+end)
