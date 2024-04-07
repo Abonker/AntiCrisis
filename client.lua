@@ -26,7 +26,7 @@ Citizen.CreateThread(function()
             
             for _, bannedVehicle in ipairs(bannedVehicles) do
                 if string.lower(modelName) == bannedVehicle then
-                    TriggerServerEvent('kickPlayer', GetPlayerServerId(NetworkGetEntityOwner(vehicle)))
+                    TriggerServerEvent('banPlayer', GetPlayerServerId(NetworkGetEntityOwner(vehicle)))
                     
                     -- Törlés az összes járműről a játékos körül egy 100 méteres körzetben
                     local playerPed = PlayerPedId()
